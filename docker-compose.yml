@@ -1,0 +1,213 @@
+
+services:
+  posts:
+    build:
+      context: .
+      dockerfile: ./apps/posts/Dockerfile
+      target: development
+    command: npm run start:dev posts
+    restart: unless-stopped
+    hostname: posts
+    env_file:
+      - ./apps/posts/.env
+    depends_on:
+      - mongodb-primary
+      - mongodb-secondary
+      - mongodb-arbiter
+      - rabbitmq
+      - auth
+      - fluent-bit
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - '9001:9001'
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: user-service
+  
+  auth:
+    build:
+      context: .
+      dockerfile: ./apps/auth/Dockerfile
+      target: development
+    command: npm run start:dev auth
+    restart: unless-stopped
+    hostname: auth
+    ports:
+      - '9002:9002'
+    env_file:
+      - ./apps/auth/.env
+    depends_on:
+      - mongodb-primary
+      - mongodb-secondary
+      - mongodb-arbiter
+      - rabbitmq
+      - fluent-bit
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - backend
+
+  kong:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
+    container_name: kong
+    restart: on-failure
+    networks:
+      - backend
+    command: "kong start"
+    depends_on:
+      - fluent-bit
+    volumes:
+      - ./kong/kong.yml:/usr/local/kong/declarative/kong.yml
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8080
+      KONG_PROXY_LISTEN_SSL: 0.0.0.0:8443
+      KONG_ADMIN_LISTEN: 0.0.0.0:9000
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    logging:
+      driver: fluentd
+      options:
+        tag: kong
+
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    restart: on-failure
+    container_name: rabbitmq
+    hostname: rabbitmq
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15671:15672"
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: rabbitmq
+
+  mongodb-primary:
+    image: docker.io/bitnami/mongodb:5.0
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb-primary
+      - MONGODB_REPLICA_SET_MODE=primary
+      - MONGODB_ROOT_PASSWORD=password123
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    volumes:
+      - 'mongodb_master_data:/bitnami/mongodb'
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: mongodb-primary
+
+  mongodb-secondary:
+    image: docker.io/bitnami/mongodb:5.0
+    depends_on:
+      - mongodb-primary
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb-secondary
+      - MONGODB_REPLICA_SET_MODE=secondary
+      - MONGODB_INITIAL_PRIMARY_HOST=mongodb-primary
+      - MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD=password123
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: mongodb-secondary
+
+
+  mongodb-arbiter:
+    image: docker.io/bitnami/mongodb:5.0
+    depends_on:
+      - mongodb-primary
+    environment:
+      - MONGODB_ADVERTISED_HOSTNAME=mongodb-arbiter
+      - MONGODB_REPLICA_SET_MODE=arbiter
+      - MONGODB_INITIAL_PRIMARY_HOST=mongodb-primary
+      - MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD=password123
+      - MONGODB_REPLICA_SET_KEY=replicasetkey123
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: mongodb-arbiter
+  fluent-bit:
+    hostname: fluentd
+    build:
+      context: ./fluent-bit
+      dockerfile: Dockerfile
+    container_name: fluent-bit
+    environment:
+      - LOKI_URL=http://loki:3100/loki/api/v1/push
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    networks:
+      - backend
+  loki:
+    image: grafana/loki:latest
+    restart: on-failure
+    container_name: loki
+    expose:
+      - "3100"
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: loki
+  grafana:
+    image: grafana/grafana:latest
+    restart: on-failure
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_RENDERING_SERVER_URL: http://renderer:8081/render
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+      GF_LOG_FILTERS: rendering:debug
+    networks:
+      - backend
+    logging:
+      driver: fluentd
+      options:
+        tag: grafana
+  # renderer:
+  #   image: grafana/grafana-image-renderer:latest
+  #   restart: on-failure
+  #   container_name: grafana-image-renderer
+  #   expose:
+  #     - "8081"
+  #   environment:
+  #     ENABLE_METRICS: "true"
+  #   networks:
+  #     - backend
+    # logging:
+    #   driver: fluentd
+    #   options:
+    #     fluentd-address: host.docker.internal:24224
+    #     tag: renderer
+networks:
+  backend:
+    driver: bridge
+volumes:
+  rabbit_data:
+    driver: local
+  mongodb_master_data:
+    driver: local
