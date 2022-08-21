@@ -1,39 +1,24 @@
-// import { NestFactory } from '@nestjs/core';
-// import { PostsModule } from './posts.module';
 
-// async function bootstrap() {
-//   const app = await NestFactory.create(PostsModule);
-//   await app.listen(3000);
-// }
-// bootstrap();
 
-// import { NestFactory } from '@nestjs/core';
-// import { RmqService } from '@app/common';
-// import { PostsModule } from './posts.module';
-// import { RmqOptions } from '@nestjs/microservices';
-// import { ValidationPipe } from '@nestjs/common';
-// import { ConfigService } from '@nestjs/config';
-
-// async function bootstrap() {
-//   const app = await NestFactory.create(PostsModule);
-//   const rmqService = app.get<RmqService>(RmqService);
-//   app.connectMicroservice<RmqOptions>(rmqService.getOptions('POSTS', true));
-//   app.useGlobalPipes(new ValidationPipe());
-//   const configService = app.get(ConfigService);
-//   await app.startAllMicroservices();
-//   await app.listen(configService.get('PORT'));
-// }
-// bootstrap();
-
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { PostsModule } from './posts.module';
+import { configureSwagger } from '@app/common';
+
 
 async function bootstrap() {
+    const logger = new Logger();
   const app = await NestFactory.create(PostsModule);
+  const configService = app.get(ConfigService);
+  app.enableCors({ origin: '*' });
   app.useGlobalPipes(new ValidationPipe());
-  // const configService = app.get(ConfigService);
-  await app.listen(9001);
+  configureSwagger(app,"posts");
+
+  await app.listen(configService.get('PORT'));
+  logger.log(
+    `🚀 Post service running on port ${configService.get('PORT')}`,
+  );
 }
 bootstrap();
+

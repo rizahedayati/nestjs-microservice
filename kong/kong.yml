@@ -14,3 +14,8 @@ services:
       - name: auth
         paths:
           - /auth
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 6 # The number of HTTP requests that can be made per minute
+      policy: local

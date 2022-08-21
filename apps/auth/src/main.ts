@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { RmqService } from '@app/common';
+import { configureSwagger, RmqService } from '@app/common';
 import { AuthModule } from './auth.module';
 import { RmqOptions } from '@nestjs/microservices';
 import { ValidationPipe } from '@nestjs/common';
@@ -12,6 +12,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
   const configService = app.get(ConfigService);
   await app.startAllMicroservices();
+  configureSwagger(app,"auth");
   await app.listen(configService.get('PORT'));
 }
 bootstrap();
